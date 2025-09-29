@@ -1,0 +1,17 @@
+# Environnements virtuels
+.venv/
+venv/
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+*.pyo
+
+# Données brutes et générées
+data/raw/
+data/processed/
+figs/
+
+# Fichiers spécifiques
+*.log
+.DS_Store
