@@ -17,25 +17,28 @@ from metrics import (
     fisher_variance_test
 )
 
+# ---------- Données ----------
 DATA_PATH = Path("data/processed/btc_spx_tech.csv")
 
-# ===================== Thème & palette =====================
+# ---------- Couleurs marque ----------
 BRAND = {
     "btc":  "#B10967",  # magenta
-    "spx":  "#412761",  # violet / indigo
+    "spx":  "#412761",  # indigo
     "tech": "#007078",  # teal
 }
 
+# ---------- Style matplotlib : fond BLANC + textes NOIRS ----------
 plt.rcParams.update({
-    "axes.facecolor":       "#0E1117",
-    "figure.facecolor":     "#0E1117",
-    "axes.edgecolor":       "#C3C7CF",
-    "axes.labelcolor":      "#E1E5EA",
-    "text.color":           "#E1E5EA",
-    "xtick.color":          "#C3C7CF",
-    "ytick.color":          "#C3C7CF",
-    "grid.color":           "#2A2F3A",
-    "grid.alpha":           0.35,
+    "figure.facecolor":     "white",
+    "axes.facecolor":       "white",
+    "savefig.facecolor":    "white",
+    "axes.edgecolor":       "black",
+    "axes.labelcolor":      "black",
+    "xtick.color":          "black",
+    "ytick.color":          "black",
+    "text.color":           "black",
+    "grid.color":           "#DDDDDD",
+    "grid.alpha":           0.8,
     "axes.grid":            True,
     "axes.grid.which":      "both",
     "legend.frameon":       False,
@@ -48,6 +51,17 @@ def _fmt_compact(x, pos):
     if x >= 1_000:
         return f"{x/1_000:.1f}k"
     return f"{x:.0f}"
+
+def _fig_ax(figsize=(10, 4.6)):
+    fig, ax = plt.subplots(figsize=figsize, facecolor="white")
+    ax.set_facecolor("white")
+    # garde-fou pour le thème clair
+    ax.tick_params(colors="black")
+    ax.yaxis.label.set_color("black")
+    ax.xaxis.label.set_color("black")
+    for sp in ax.spines.values():
+        sp.set_edgecolor("black")
+    return fig, ax
 
 # ===================== Helpers data =====================
 @st.cache_data
@@ -234,7 +248,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
 # -------- Volatilité --------
 with tab1:
     st.subheader("Volatilité annualisée")
-    fig, ax = plt.subplots(figsize=(10, 4.6))
+    fig, ax = _fig_ax((10, 4.6))
     ax.plot(d["Date"], d["vol_btc"],  label="BTC",        color=BRAND["btc"])
     ax.plot(d["Date"], d["vol_spx"],  label="S&P500",     color=BRAND["spx"])
     ax.plot(d["Date"], d["vol_tech"], label="Tech (QQQ)", color=BRAND["tech"])
@@ -245,10 +259,10 @@ with tab1:
 # -------- Corrélation --------
 with tab2:
     st.subheader("Corrélation roulante BTC vs marchés")
-    fig, ax = plt.subplots(figsize=(10, 4.6))
-    ax.plot(d["Date"], d["corr_btc_spx"],  label="BTC ~ S&P500", linewidth=1.5, color=BRAND["spx"])
-    ax.plot(d["Date"], d["corr_btc_tech"], label="BTC ~ Tech (QQQ)", linewidth=1.5, color=BRAND["tech"])
-    ax.axhline(0.0, linestyle="--", linewidth=1, color="#657089", alpha=0.7)
+    fig, ax = _fig_ax((10, 4.6))
+    ax.plot(d["Date"], d["corr_btc_spx"],  label="BTC ~ S&P500", linewidth=1.6, color=BRAND["spx"])
+    ax.plot(d["Date"], d["corr_btc_tech"], label="BTC ~ Tech (QQQ)", linewidth=1.6, color=BRAND["tech"])
+    ax.axhline(0.0, linestyle="--", linewidth=1, color="#666", alpha=0.8)
     ax.set_ylabel("Corrélation (fenêtre)")
     ax.legend()
     st.pyplot(fig, clear_figure=True)
@@ -257,7 +271,6 @@ with tab2:
 with tab3:
     st.subheader("Évolution comparée")
 
-    # Modes plus riches pour éviter l’effet “plat”
     mode = st.radio(
         "Échelle / Méthode",
         [
@@ -289,7 +302,7 @@ with tab3:
     def _style_axes(ax, ylabel):
         ax.yaxis.set_major_formatter(FuncFormatter(_fmt_compact))
         ax.set_ylabel(ylabel)
-        ax.grid(True, which="both", alpha=0.35)
+        ax.grid(True, which="both", alpha=0.8, color="#DDD")
 
     if mode == "Risque normalisé (vol cible)":
         def target_vol_index(r: pd.Series, window: int = 30, target_ann_vol: float = 0.20) -> pd.Series:
@@ -305,7 +318,7 @@ with tab3:
             "Tech (QQQ)": target_vol_index(d["ret_tech"]),
         }).dropna()
 
-        fig, ax = plt.subplots(figsize=(10, 4.8))
+        fig, ax = _fig_ax((10, 4.8))
         ax.plot(idx["Date"], idx["BTC"],        label="BTC (vol cible)",        color=BRAND["btc"])
         ax.plot(idx["Date"], idx["S&P500"],     label="S&P500 (vol cible)",     color=BRAND["spx"])
         ax.plot(idx["Date"], idx["Tech (QQQ)"], label="Tech (QQQ) (vol cible)", color=BRAND["tech"])
@@ -314,19 +327,18 @@ with tab3:
         st.pyplot(fig, clear_figure=True)
 
     elif mode == "Base 100 (log)":
-        fig, ax = plt.subplots(figsize=(10, 4.8))
+        fig, ax = _fig_ax((10, 4.8))
         ax.plot(idx_lin["Date"], idx_lin["BTC"],        label="BTC (base 100)",        color=BRAND["btc"])
         ax.plot(idx_lin["Date"], idx_lin["S&P500"],     label="S&P500 (base 100)",     color=BRAND["spx"])
         ax.plot(idx_lin["Date"], idx_lin["Tech (QQQ)"], label="Tech (QQQ) (base 100)", color=BRAND["tech"])
         ax.set_yscale("log")
         ax.yaxis.set_major_formatter(ScalarFormatter())
-        ax.yaxis.set_minor_formatter(ScalarFormatter())
         ax.set_ylabel("Indice base 100 (log)")
         ax.legend()
         st.pyplot(fig, clear_figure=True)
 
     elif mode == "Base 100 (linéaire)":
-        fig, ax = plt.subplots(figsize=(10, 4.8))
+        fig, ax = _fig_ax((10, 4.8))
         ax.plot(idx_lin["Date"], idx_lin["BTC"],        label="BTC (base 100)",        color=BRAND["btc"])
         ax.plot(idx_lin["Date"], idx_lin["S&P500"],     label="S&P500 (base 100)",     color=BRAND["spx"])
         ax.plot(idx_lin["Date"], idx_lin["Tech (QQQ)"], label="Tech (QQQ) (base 100)", color=BRAND["tech"])
@@ -335,7 +347,7 @@ with tab3:
         st.pyplot(fig, clear_figure=True)
 
     elif mode == "Base 100 (linéaire, axes séparés)":
-        fig, ax1 = plt.subplots(figsize=(10, 4.8))
+        fig, ax1 = _fig_ax((10, 4.8))
         ax1.plot(idx_lin["Date"], idx_lin["S&P500"],     label="S&P500",     color=BRAND["spx"])
         ax1.plot(idx_lin["Date"], idx_lin["Tech (QQQ)"], label="Tech (QQQ)", color=BRAND["tech"])
         _style_axes(ax1, "Indice base 100 (S&P/Tech)")
@@ -357,7 +369,7 @@ with tab3:
             lo, hi = np.nanmin(x), np.nanmax(x)
             mm[col] = 100.0 * (x - lo) / (hi - lo) if hi > lo else 0.0
 
-        fig, ax = plt.subplots(figsize=(10, 4.8))
+        fig, ax = _fig_ax((10, 4.8))
         ax.plot(mm["Date"], mm["BTC"],        label="BTC (min-max)",        color=BRAND["btc"])
         ax.plot(mm["Date"], mm["S&P500"],     label="S&P500 (min-max)",     color=BRAND["spx"])
         ax.plot(mm["Date"], mm["Tech (QQQ)"], label="Tech (QQQ) (min-max)", color=BRAND["tech"])
@@ -376,7 +388,7 @@ with tab4:
         "Tech":  drawdown_from_returns(d["ret_tech"]),
     }).dropna()
 
-    fig, ax = plt.subplots(figsize=(10, 4.6))
+    fig, ax = _fig_ax((10, 4.6))
     ax.plot(dd["Date"], dd["BTC"],   label="BTC",        color=BRAND["btc"])
     ax.plot(dd["Date"], dd["S&P500"],label="S&P500",     color=BRAND["spx"])
     ax.plot(dd["Date"], dd["Tech"],  label="Tech (QQQ)", color=BRAND["tech"])
@@ -387,8 +399,8 @@ with tab4:
 # -------- OLS BTC ~ S&P --------
 with tab5:
     st.subheader("Scatter & OLS — BTC ~ S&P500")
-    fig, ax = plt.subplots(figsize=(6.5, 5))
-    ax.scatter(d["ret_spx"], d["ret_btc"], s=8, alpha=0.6, color=BRAND["btc"])
+    fig, ax = _fig_ax((6.5, 5))
+    ax.scatter(d["ret_spx"], d["ret_btc"], s=9, alpha=0.6, color=BRAND["btc"], edgecolors="none")
     ax.set_xlabel("r_SPX"); ax.set_ylabel("r_BTC")
     st.pyplot(fig, clear_figure=True)
     m = ols_summary(d, "ret_btc", "ret_spx")
@@ -397,8 +409,8 @@ with tab5:
 # -------- OLS BTC ~ Tech --------
 with tab6:
     st.subheader("Scatter & OLS — BTC ~ Tech (QQQ)")
-    fig, ax = plt.subplots(figsize=(6.5, 5))
-    ax.scatter(d["ret_tech"], d["ret_btc"], s=8, alpha=0.6, color=BRAND["btc"])
+    fig, ax = _fig_ax((6.5, 5))
+    ax.scatter(d["ret_tech"], d["ret_btc"], s=9, alpha=0.6, color=BRAND["btc"], edgecolors="none")
     ax.set_xlabel("r_Tech (QQQ)"); ax.set_ylabel("r_BTC")
     st.pyplot(fig, clear_figure=True)
     m = ols_summary(d, "ret_btc", "ret_tech")
