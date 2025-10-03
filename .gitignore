@@ -1,15 +1,16 @@
 # Environnements virtuels
-.venv/
 venv/
+.venv/
 
 # Fichiers Python compilés
 __pycache__/
 *.pyc
 *.pyo
 
-# Données brutes et générées
+# Données brutes uniquement (pas les processed !)
 data/raw/
-data/processed/
+
+# Figures générées
 figs/
 
 # Fichiers spécifiques
