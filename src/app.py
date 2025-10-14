@@ -18,13 +18,14 @@ from metrics import (
 )
 
 # ---------- Données ----------
-DATA_PATH = Path("data/processed/btc_spx_tech.csv")
+DATA_PATH = Path("data/processed/btc_spx_tech_gold.csv")
 
 # ---------- Couleurs marque ----------
 BRAND = {
     "btc":  "#B10967",  # magenta
     "spx":  "#412761",  # indigo
     "tech": "#007078",  # teal
+    "gold": "#F8AF00",  # gold
 }
 
 # ---------- Style matplotlib : fond BLANC + textes NOIRS ----------
@@ -93,7 +94,7 @@ def ols_summary(df: pd.DataFrame, ycol: str, xcol: str):
 
 # ===================== App =====================
 st.set_page_config(page_title="BTC vs Marchés — Risk Dashboard", layout="wide")
-st.title("BTC vs S&P500 & Tech — Risk & Correlation Dashboard")
+st.title("BTC vs S&P500, Tech & Gold — Risk & Correlation Dashboard")
 
 df = load_data(DATA_PATH)
 
@@ -113,12 +114,13 @@ mask = (df["Date"] >= pd.Timestamp(start)) & (df["Date"] <= pd.Timestamp(end))
 d = df.loc[mask].copy()
 
 # Volatilités roulantes (annualisées)
-for a in ["btc", "spx", "tech"]:
+for a in ["btc", "spx", "tech", "gold"]:
     d[f"vol_{a}"] = d[f"ret_{a}"].rolling(int(win_vol)).std(ddof=1) * np.sqrt(TRADING_DAYS)
 
 # Corrélations roulantes
-d["corr_btc_spx"]  = d["ret_btc"].rolling(int(win_corr)).corr(d["ret_spx"])
-d["corr_btc_tech"] = d["ret_btc"].rolling(int(win_corr)).corr(d["ret_tech"])
+d["corr_btc_spx"]   = d["ret_btc"].rolling(int(win_corr)).corr(d["ret_spx"])
+d["corr_btc_tech"]  = d["ret_btc"].rolling(int(win_corr)).corr(d["ret_tech"])
+d["corr_btc_gold"]  = d["ret_btc"].rolling(int(win_corr)).corr(d["ret_gold"])
 
 # ==================== Paramètres risque / CAPM ====================
 st.markdown("### Paramètres de risque / CAPM")
@@ -173,75 +175,92 @@ else:
     prime_ann = None
 
 # ==================== Stats annualisées / CAPM ====================
-p_btc: AnnParams  = annualize_mean_vol(d["ret_btc"])
-p_spx: AnnParams  = annualize_mean_vol(d["ret_spx"])
-p_tech: AnnParams = annualize_mean_vol(d["ret_tech"])
+p_btc: AnnParams   = annualize_mean_vol(d["ret_btc"])
+p_spx: AnnParams   = annualize_mean_vol(d["ret_spx"])
+p_tech: AnnParams  = annualize_mean_vol(d["ret_tech"])
+p_gold: AnnParams  = annualize_mean_vol(d["ret_gold"])
 
 # μ selon la méthode choisie
 if mu_method == "Réel (moyenne empirique)":
-    mu_btc, mu_spx, mu_tech = p_btc.mu_ann, p_spx.mu_ann, p_tech.mu_ann
+    mu_btc, mu_spx, mu_tech, mu_gold = p_btc.mu_ann, p_spx.mu_ann, p_tech.mu_ann, p_gold.mu_ann
 
 elif mu_method == "CAPM (pas d'alpha) — μ_mkt empirique":
     mu_spx_mkt = p_spx.mu_ann  # marché = S&P empirique
-    mu_btc, beta_btc   = capm_mu_ann_from_series(d["ret_btc"],  d["ret_spx"], rf_ann, mu_spx_mkt)
-    mu_tech, beta_tech = capm_mu_ann_from_series(d["ret_tech"], d["ret_spx"], rf_ann, mu_spx_mkt)
+    mu_btc, beta_btc    = capm_mu_ann_from_series(d["ret_btc"],  d["ret_spx"], rf_ann, mu_spx_mkt)
+    mu_tech, beta_tech  = capm_mu_ann_from_series(d["ret_tech"], d["ret_spx"], rf_ann, mu_spx_mkt)
+    mu_gold, beta_gold  = capm_mu_ann_from_series(d["ret_gold"], d["ret_spx"], rf_ann, mu_spx_mkt)
     mu_spx = mu_spx_mkt
 else:
     mu_mkt_capm = mu_ann_from_premium(rf_ann, prime_ann or 0.0)
     rf_daily = annual_to_daily_rate(rf_ann)
-    beta_btc  = capm_beta(d["ret_btc"],  d["ret_spx"], rf_daily=rf_daily)
-    beta_tech = capm_beta(d["ret_tech"], d["ret_spx"], rf_daily=rf_daily)
-    mu_btc  = mu_ann_from_premium(rf_ann, (beta_btc  or np.nan) * (mu_mkt_capm - rf_ann))
-    mu_tech = mu_ann_from_premium(rf_ann, (beta_tech or np.nan) * (mu_mkt_capm - rf_ann))
-    mu_spx  = mu_mkt_capm
+    beta_btc   = capm_beta(d["ret_btc"],  d["ret_spx"], rf_daily=rf_daily)
+    beta_tech  = capm_beta(d["ret_tech"], d["ret_spx"], rf_daily=rf_daily)
+    beta_gold  = capm_beta(d["ret_gold"], d["ret_spx"], rf_daily=rf_daily)
+    mu_btc   = mu_ann_from_premium(rf_ann, (beta_btc  or np.nan) * (mu_mkt_capm - rf_ann))
+    mu_tech  = mu_ann_from_premium(rf_ann, (beta_tech or np.nan) * (mu_mkt_capm - rf_ann))
+    mu_gold  = mu_ann_from_premium(rf_ann, (beta_gold or np.nan) * (mu_mkt_capm - rf_ann))
+    mu_spx   = mu_mkt_capm
 
 # ==================== KPIs ====================
-k1,k2,k3,k4,k5,k6 = st.columns(6)
+k1,k2,k3,k4,k5,k6,k7,k8 = st.columns(8)
 with k1:
-    st.metric("Vol BTC (annual.)", f"{d['vol_btc'].dropna().iloc[-1]:.1%}" if d['vol_btc'].notna().any() else "N/A")
+    st.metric("Vol BTC (annual.)",  f"{d['vol_btc'].dropna().iloc[-1]:.1%}"  if d['vol_btc'].notna().any()  else "N/A")
 with k2:
-    st.metric("Vol S&P (annual.)", f"{d['vol_spx'].dropna().iloc[-1]:.1%}" if d['vol_spx'].notna().any() else "N/A")
+    st.metric("Vol S&P (annual.)",  f"{d['vol_spx'].dropna().iloc[-1]:.1%}"  if d['vol_spx'].notna().any()  else "N/A")
 with k3:
     st.metric("Vol Tech (annual.)", f"{d['vol_tech'].dropna().iloc[-1]:.1%}" if d['vol_tech'].notna().any() else "N/A")
 with k4:
-    st.metric("Max Drawdown BTC", f"{drawdown_from_returns(d['ret_btc']).min():.0%}")
+    st.metric("Vol Gold (annual.)", f"{d['vol_gold'].dropna().iloc[-1]:.1%}" if d['vol_gold'].notna().any() else "N/A")
 with k5:
-    st.metric("Max Drawdown S&P500", f"{drawdown_from_returns(d['ret_spx']).min():.0%}")
+    st.metric("Max Drawdown BTC",   f"{drawdown_from_returns(d['ret_btc']).min():.0%}")
 with k6:
-    st.metric("Max Drawdown Tech (QQQ)", f"{drawdown_from_returns(d['ret_tech']).min():.0%}")
+    st.metric("Max Drawdown S&P",   f"{drawdown_from_returns(d['ret_spx']).min():.0%}")
+with k7:
+    st.metric("Max Drawdown Tech",  f"{drawdown_from_returns(d['ret_tech']).min():.0%}")
+with k8:
+    st.metric("Max Drawdown Gold",  f"{drawdown_from_returns(d['ret_gold']).min():.0%}")
 
 # Vol échantillon (quotidienne / annualisée)
 disp_ann = (use_ann_sample == "Annualisée")
 s_btc  = sample_vol(d["ret_btc"],  annualized=disp_ann)
 s_spx  = sample_vol(d["ret_spx"],  annualized=disp_ann)
 s_tech = sample_vol(d["ret_tech"], annualized=disp_ann)
+s_gold = sample_vol(d["ret_gold"], annualized=disp_ann)
 
-c1,c2,c3,c4,c5,c6 = st.columns(6)
+c1,c2,c3,c4,c5,c6,c7,c8 = st.columns(8)
 with c1:
-    st.metric(f"Vol sample BTC ({'ann.' if disp_ann else 'j'})", f"{s_btc:.2%}")
+    st.metric(f"Vol sample BTC ({'ann.' if disp_ann else 'j'})",  f"{s_btc:.2%}")
 with c2:
-    st.metric(f"Vol sample S&P ({'ann.' if disp_ann else 'j'})", f"{s_spx:.2%}")
+    st.metric(f"Vol sample S&P ({'ann.' if disp_ann else 'j'})",  f"{s_spx:.2%}")
 with c3:
     st.metric(f"Vol sample Tech ({'ann.' if disp_ann else 'j'})", f"{s_tech:.2%}")
+with c4:
+    st.metric(f"Vol sample Gold ({'ann.' if disp_ann else 'j'})", f"{s_gold:.2%}")
+
+# Vol échantillon (quotidienne / annualisée) — inchangé au-dessus
 
 # Horizons critiques t*
 t_btc  = dt_critical(mu_btc,  p_btc.sigma_ann,  rf_ann, z=z_value)
 t_spx  = dt_critical(mu_spx,  p_spx.sigma_ann,  rf_ann, z=z_value)
 t_tech = dt_critical(mu_tech, p_tech.sigma_ann, rf_ann, z=z_value)
+t_gold = dt_critical(mu_gold, p_gold.sigma_ann, rf_ann, z=z_value)  # <— on conserve le calcul
 
-with c4:
-    st.metric("dt* BTC (> r_f)",  f"{t_btc:.2f} ans"  if np.isfinite(t_btc)  else "∞")
+# === KPIs "dt*" : on n'affiche PAS Gold ici ===
 with c5:
-    st.metric("dt* S&P (> r_f)",  f"{t_spx:.2f} ans"  if np.isfinite(t_spx)  else "∞")
+    st.metric("dt* BTC (> r_f)",  f"{t_btc:.2f} ans"  if np.isfinite(t_btc)  else "∞")
 with c6:
+    st.metric("dt* S&P (> r_f)",  f"{t_spx:.2f} ans"  if np.isfinite(t_spx)  else "∞")
+with c7:
     st.metric("dt* Tech (> r_f)", f"{t_tech:.2f} ans" if np.isfinite(t_tech) else "∞")
+# (pas de KPI c8 pour Gold)
+
 
 st.divider()
 
 # ==================== Tabs ====================
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs(
     ["Volatilité", "Corrélation", "Base 100", "Drawdown",
-     "OLS: BTC ~ S&P500", "OLS: BTC ~ Tech",
+     "OLS: BTC ~ S&P500", "OLS: BTC ~ Tech", "OLS: BTC ~ Gold",
      "Temps > r_f & CAPM", "Test variances (Fisher)"]
 )
 
@@ -252,6 +271,7 @@ with tab1:
     ax.plot(d["Date"], d["vol_btc"],  label="BTC",        color=BRAND["btc"])
     ax.plot(d["Date"], d["vol_spx"],  label="S&P500",     color=BRAND["spx"])
     ax.plot(d["Date"], d["vol_tech"], label="Tech (QQQ)", color=BRAND["tech"])
+    ax.plot(d["Date"], d["vol_gold"], label="Gold",       color=BRAND["gold"])
     ax.set_ylabel("Vol annualisée")
     ax.legend()
     st.pyplot(fig, clear_figure=True)
@@ -260,8 +280,9 @@ with tab1:
 with tab2:
     st.subheader("Corrélation roulante BTC vs marchés")
     fig, ax = _fig_ax((10, 4.6))
-    ax.plot(d["Date"], d["corr_btc_spx"],  label="BTC ~ S&P500", linewidth=1.6, color=BRAND["spx"])
-    ax.plot(d["Date"], d["corr_btc_tech"], label="BTC ~ Tech (QQQ)", linewidth=1.6, color=BRAND["tech"])
+    ax.plot(d["Date"], d["corr_btc_spx"],   label="BTC ~ S&P500",    linewidth=1.6, color=BRAND["spx"])
+    ax.plot(d["Date"], d["corr_btc_tech"],  label="BTC ~ Tech (QQQ)",linewidth=1.6, color=BRAND["tech"])
+    ax.plot(d["Date"], d["corr_btc_gold"],  label="BTC ~ Gold",      linewidth=1.6, color=BRAND["gold"])
     ax.axhline(0.0, linestyle="--", linewidth=1, color="#666", alpha=0.8)
     ax.set_ylabel("Corrélation (fenêtre)")
     ax.legend()
@@ -283,13 +304,14 @@ with tab3:
         index=0, horizontal=True
     )
 
-    have_prices = {"price_btc", "price_spx", "price_tech"}.issubset(d.columns)
+    have_prices = {"price_btc", "price_spx", "price_tech", "price_gold"}.issubset(d.columns)
     if have_prices:
         idx_lin = pd.DataFrame({
             "Date": d["Date"],
             "BTC":        base100_from_price(d["price_btc"]),
             "S&P500":     base100_from_price(d["price_spx"]),
             "Tech (QQQ)": base100_from_price(d["price_tech"]),
+            "Gold":       base100_from_price(d["price_gold"]),
         }).dropna()
     else:
         idx_lin = pd.DataFrame({
@@ -297,6 +319,7 @@ with tab3:
             "BTC":        base100_from_returns(d["ret_btc"]),
             "S&P500":     base100_from_returns(d["ret_spx"]),
             "Tech (QQQ)": base100_from_returns(d["ret_tech"]),
+            "Gold":       base100_from_returns(d["ret_gold"]),
         }).dropna()
 
     def _style_axes(ax, ylabel):
@@ -316,12 +339,14 @@ with tab3:
             "BTC":        target_vol_index(d["ret_btc"]),
             "S&P500":     target_vol_index(d["ret_spx"]),
             "Tech (QQQ)": target_vol_index(d["ret_tech"]),
+            "Gold":       target_vol_index(d["ret_gold"]),
         }).dropna()
 
         fig, ax = _fig_ax((10, 4.8))
         ax.plot(idx["Date"], idx["BTC"],        label="BTC (vol cible)",        color=BRAND["btc"])
         ax.plot(idx["Date"], idx["S&P500"],     label="S&P500 (vol cible)",     color=BRAND["spx"])
         ax.plot(idx["Date"], idx["Tech (QQQ)"], label="Tech (QQQ) (vol cible)", color=BRAND["tech"])
+        ax.plot(idx["Date"], idx["Gold"],       label="Gold (vol cible)",       color=BRAND["gold"])
         _style_axes(ax, "Indice (vol cible 20%)")
         ax.legend()
         st.pyplot(fig, clear_figure=True)
@@ -331,6 +356,7 @@ with tab3:
         ax.plot(idx_lin["Date"], idx_lin["BTC"],        label="BTC (base 100)",        color=BRAND["btc"])
         ax.plot(idx_lin["Date"], idx_lin["S&P500"],     label="S&P500 (base 100)",     color=BRAND["spx"])
         ax.plot(idx_lin["Date"], idx_lin["Tech (QQQ)"], label="Tech (QQQ) (base 100)", color=BRAND["tech"])
+        ax.plot(idx_lin["Date"], idx_lin["Gold"],       label="Gold (base 100)",       color=BRAND["gold"])
         ax.set_yscale("log")
         ax.yaxis.set_major_formatter(ScalarFormatter())
         ax.set_ylabel("Indice base 100 (log)")
@@ -342,6 +368,7 @@ with tab3:
         ax.plot(idx_lin["Date"], idx_lin["BTC"],        label="BTC (base 100)",        color=BRAND["btc"])
         ax.plot(idx_lin["Date"], idx_lin["S&P500"],     label="S&P500 (base 100)",     color=BRAND["spx"])
         ax.plot(idx_lin["Date"], idx_lin["Tech (QQQ)"], label="Tech (QQQ) (base 100)", color=BRAND["tech"])
+        ax.plot(idx_lin["Date"], idx_lin["Gold"],       label="Gold (base 100)",       color=BRAND["gold"])
         _style_axes(ax, "Indice base 100")
         ax.legend()
         st.pyplot(fig, clear_figure=True)
@@ -350,7 +377,8 @@ with tab3:
         fig, ax1 = _fig_ax((10, 4.8))
         ax1.plot(idx_lin["Date"], idx_lin["S&P500"],     label="S&P500",     color=BRAND["spx"])
         ax1.plot(idx_lin["Date"], idx_lin["Tech (QQQ)"], label="Tech (QQQ)", color=BRAND["tech"])
-        _style_axes(ax1, "Indice base 100 (S&P/Tech)")
+        ax1.plot(idx_lin["Date"], idx_lin["Gold"],       label="Gold",       color=BRAND["gold"])
+        _style_axes(ax1, "Indice base 100 (S&P/Tech/Gold)")
 
         ax2 = ax1.twinx()
         ax2.plot(idx_lin["Date"], idx_lin["BTC"], label="BTC", color=BRAND["btc"], alpha=0.9)
@@ -364,7 +392,7 @@ with tab3:
 
     elif mode == "Base 100 (linéaire, min-max 0–100)":
         mm = idx_lin.copy()
-        for col in ["BTC", "S&P500", "Tech (QQQ)"]:
+        for col in ["BTC", "S&P500", "Tech (QQQ)", "Gold"]:
             x = mm[col].values
             lo, hi = np.nanmin(x), np.nanmax(x)
             mm[col] = 100.0 * (x - lo) / (hi - lo) if hi > lo else 0.0
@@ -372,7 +400,8 @@ with tab3:
         fig, ax = _fig_ax((10, 4.8))
         ax.plot(mm["Date"], mm["BTC"],        label="BTC (min-max)",        color=BRAND["btc"])
         ax.plot(mm["Date"], mm["S&P500"],     label="S&P500 (min-max)",     color=BRAND["spx"])
-        ax.plot(mm["Date"], mm["Tech (QQQ)"], label="Tech (QQQ) (min-max)", color=BRAND["tech"])
+        ax.plot(mm["Date"], mm["Tech (QQQ)"], label="Tech (min-max)",       color=BRAND["tech"])
+        ax.plot(mm["Date"], mm["Gold"],       label="Gold (min-max)",       color=BRAND["gold"])
         ax.set_ylabel("Échelle normalisée (0–100)")
         ax.set_ylim(-3, 103)
         ax.legend()
@@ -382,16 +411,18 @@ with tab3:
 with tab4:
     st.subheader("Drawdown cumulatif")
     dd = pd.DataFrame({
-        "Date":  d["Date"],
-        "BTC":   drawdown_from_returns(d["ret_btc"]),
-        "S&P500":drawdown_from_returns(d["ret_spx"]),
-        "Tech":  drawdown_from_returns(d["ret_tech"]),
+        "Date":   d["Date"],
+        "BTC":    drawdown_from_returns(d["ret_btc"]),
+        "S&P500": drawdown_from_returns(d["ret_spx"]),
+        "Tech":   drawdown_from_returns(d["ret_tech"]),
+        "Gold":   drawdown_from_returns(d["ret_gold"]),
     }).dropna()
 
     fig, ax = _fig_ax((10, 4.6))
-    ax.plot(dd["Date"], dd["BTC"],   label="BTC",        color=BRAND["btc"])
-    ax.plot(dd["Date"], dd["S&P500"],label="S&P500",     color=BRAND["spx"])
-    ax.plot(dd["Date"], dd["Tech"],  label="Tech (QQQ)", color=BRAND["tech"])
+    ax.plot(dd["Date"], dd["BTC"],    label="BTC",        color=BRAND["btc"])
+    ax.plot(dd["Date"], dd["S&P500"], label="S&P500",     color=BRAND["spx"])
+    ax.plot(dd["Date"], dd["Tech"],   label="Tech (QQQ)", color=BRAND["tech"])
+    ax.plot(dd["Date"], dd["Gold"],   label="Gold",       color=BRAND["gold"])
     ax.set_ylabel("Drawdown")
     ax.legend()
     st.pyplot(fig, clear_figure=True)
@@ -416,8 +447,18 @@ with tab6:
     m = ols_summary(d, "ret_btc", "ret_tech")
     st.code(m.summary().as_text() if m is not None else "Pas assez de points.")
 
-# -------- Temps > r_f & CAPM --------
+# -------- OLS BTC ~ Gold --------
 with tab7:
+    st.subheader("Scatter & OLS — BTC ~ Gold")
+    fig, ax = _fig_ax((6.5, 5))
+    ax.scatter(d["ret_gold"], d["ret_btc"], s=9, alpha=0.6, color=BRAND["gold"], edgecolors="none")
+    ax.set_xlabel("r_Gold"); ax.set_ylabel("r_BTC")
+    st.pyplot(fig, clear_figure=True)
+    m = ols_summary(d, "ret_btc", "ret_gold")
+    st.code(m.summary().as_text() if m is not None else "Pas assez de points.")
+
+# -------- Temps > r_f & CAPM --------
+with tab8:
     st.subheader("Temps minimal pour battre le taux sans risque")
 
     st.caption(
@@ -427,17 +468,18 @@ with tab7:
         f"""
         • **BTC**: μ={mu_btc:.2%}, σ={p_btc.sigma_ann:.2%} → **t\*** = {('∞' if not np.isfinite(t_btc) else f'{t_btc:.2f} ans')}  
         • **S&P500**: μ={mu_spx:.2%}, σ={p_spx.sigma_ann:.2%} → **t\*** = {('∞' if not np.isfinite(t_spx) else f'{t_spx:.2f} ans')}  
-        • **Tech (QQQ)**: μ={mu_tech:.2%}, σ={p_tech.sigma_ann:.2%} → **t\*** = {('∞' if not np.isfinite(t_tech) else f'{t_tech:.2f} ans')}
+        • **Tech (QQQ)**: μ={mu_tech:.2%}, σ={p_tech.sigma_ann:.2%} → **t\*** = {('∞' if not np.isfinite(t_tech) else f'{t_tech:.2f} ans')}  
+        • **Gold**: μ={mu_gold:.2%}, σ={p_gold.sigma_ann:.2%} → **t\*** = {('∞' if not np.isfinite(t_gold) else f'{t_gold:.2f} ans')}
         """
     )
     st.caption("Formule : t* = ( z · σ / (μ − r_f) )², z au niveau choisi, μ et σ annualisés ; t* en années.")
 
     st.markdown("**Paramètres utilisés (annualisés)**")
     params_df = pd.DataFrame({
-        "Actif": ["BTC","S&P500","Tech (QQQ)"],
-        "μ_ann": [mu_btc, mu_spx, mu_tech],
-        "σ_ann (sample)": [p_btc.sigma_ann, p_spx.sigma_ann, p_tech.sigma_ann],
-        "t* (ans)": [t_btc, t_spx, t_tech],
+        "Actif": ["BTC","S&P500","Tech (QQQ)","Gold"],
+        "μ_ann": [mu_btc, mu_spx, mu_tech, mu_gold],
+        "σ_ann (sample)": [p_btc.sigma_ann, p_spx.sigma_ann, p_tech.sigma_ann, p_gold.sigma_ann],
+        "t* (ans)": [t_btc, t_spx, t_tech, t_gold],
     })
     st.dataframe(
         params_df.style.format({"μ_ann":"{:.2%}","σ_ann (sample)":"{:.2%}","t* (ans)":"{:.2f}"}),
@@ -445,14 +487,18 @@ with tab7:
     )
 
 # -------- Fisher --------
-with tab8:
+with tab9:
     st.subheader("Test d’égalité des variances (Fisher) — rendements quotidiens")
-    rows = []
-    for (label, a, b) in [
+    pairs = [
         ("BTC vs S&P",  d["ret_btc"],  d["ret_spx"]),
         ("BTC vs Tech", d["ret_btc"],  d["ret_tech"]),
+        ("BTC vs Gold", d["ret_btc"],  d["ret_gold"]),
         ("S&P vs Tech", d["ret_spx"],  d["ret_tech"]),
-    ]:
+        ("S&P vs Gold", d["ret_spx"],  d["ret_gold"]),
+        ("Tech vs Gold",d["ret_tech"], d["ret_gold"]),
+    ]
+    rows = []
+    for label, a, b in pairs:
         F, p, df1, df2 = fisher_variance_test(a, b)
         rows.append((label, F, p, df1, df2))
     out = pd.DataFrame(rows, columns=["Paire","F","p-value","df1","df2"])
